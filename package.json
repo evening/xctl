@@ -1,0 +1,35 @@
+{
+  "name": "xctl",
+  "version": "0.1.0",
+  "description": "CLI for an AI agent to handle X mentions and XChat DMs via Playwright over CDP",
+  "main": "dist/cli.js",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "dev": "tsc --watch"
+  },
+  "author": "",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "commander": "^15.0.0",
+    "playwright-core": "^1.63.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "type": "module",
+  "bin": {
+    "xctl": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist"
+  ],
+  "private": true
+}
