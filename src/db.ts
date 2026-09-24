@@ -63,6 +63,15 @@ export function getDb(): Database.Database {
       detail TEXT
     );
     CREATE INDEX IF NOT EXISTS writes_at ON writes(at_ms);
+    CREATE TABLE IF NOT EXISTS pin_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      at_ms INTEGER NOT NULL,
+      ok INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS kv (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
   const cols = (db.prepare('PRAGMA table_info(drafts)').all() as { name: string }[]).map(c => c.name);
   if (!cols.includes('options')) db.exec('ALTER TABLE drafts ADD COLUMN options TEXT');
@@ -106,6 +115,41 @@ export function handledSet(ids: string[]): Set<string> {
   const stmt = d.prepare('SELECT id FROM handled WHERE id = ?');
   for (const id of ids) if (stmt.get(id)) out.add(id);
   return out;
+}
+
+/** Tweets that xctl itself replied to (from handled notes "replied <id>"), target id -> reply id. */
+export function repliedViaXctl(ids: string[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const stmt = getDb().prepare("SELECT note FROM handled WHERE id = ? AND note LIKE 'replied %'");
+  for (const id of ids) {
+    const r = stmt.get(id) as { note: string } | undefined;
+    if (r) out.set(id, r.note.slice('replied '.length));
+  }
+  return out;
+}
+
+// ---- XChat PIN attempts (outcome + time only; the PIN itself is never stored) ----
+
+export function recordPinAttempt(ok: boolean): void {
+  getDb().prepare('INSERT INTO pin_attempts (at_ms, ok) VALUES (?, ?)').run(Date.now(), ok ? 1 : 0);
+}
+
+/** Rejections in the last hour since the most recent success. */
+export function recentPinFailures(): number {
+  const d = getDb();
+  const hourAgo = Date.now() - 3_600_000;
+  const lastOk = (d.prepare('SELECT MAX(at_ms) AS t FROM pin_attempts WHERE ok = 1').get() as { t: number | null }).t ?? 0;
+  return (d.prepare('SELECT COUNT(*) AS n FROM pin_attempts WHERE ok = 0 AND at_ms > ?').get(Math.max(hourAgo, lastOk)) as { n: number }).n;
+}
+
+// ---- small cache ----
+
+export function kvGet(key: string): string | null {
+  return (getDb().prepare('SELECT value FROM kv WHERE key = ?').get(key) as { value: string } | undefined)?.value ?? null;
+}
+
+export function kvSet(key: string, value: string): void {
+  getDb().prepare('INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
 }
 
 // ---- drafts ----

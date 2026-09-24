@@ -34,6 +34,10 @@ export const config = {
   verbose: bool('XCTL_VERBOSE', false),
   /** Ignore React/app state in XChat and use only the rendered DOM (kill switch for the fiber heuristics). */
   domOnly: bool('XCTL_DOM_ONLY', false),
+  /** XChat PIN, only from the environment; never written to disk or logs. Unset = never enter a PIN. */
+  xchatPin: process.env.XCTL_XCHAT_PIN || null,
+  /** Stop auto-entering the PIN after this many rejections within an hour (XChat may lock out wrong guesses). */
+  pinMaxFailuresPerHour: num('XCTL_PIN_MAX_FAILURES', 2),
 };
 
 export function ensureHome(): void {

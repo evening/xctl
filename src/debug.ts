@@ -4,6 +4,7 @@ import type { Page } from 'playwright-core';
 import { config } from './config.js';
 import type { XctlError } from './errors.js';
 import { log } from './log.js';
+import { PIN_INPUT_SELECTOR } from './xchat-pin.js';
 
 function stamp(): string {
   const d = new Date();
@@ -25,13 +26,32 @@ export async function dumpDebug(page: Page | undefined, command: string, err: Xc
       JSON.stringify({ code: err.code, message: err.message, details: err.details, url: page?.url(), stack: err.stack, at: new Date().toISOString() }, null, 2),
     );
     if (page && !page.isClosed()) {
+      if (config.xchatPin) {
+        // Never let a typed PIN end up in a screenshot or the saved HTML.
+        await withTimeout(
+          page
+            .evaluate(sel => {
+              for (const el of document.querySelectorAll(sel)) {
+                (el as HTMLInputElement).value = '';
+                el.removeAttribute('value');
+              }
+            }, PIN_INPUT_SELECTOR)
+            .catch(() => undefined),
+          3000,
+        );
+      }
       await withTimeout(page.screenshot({ path: path.join(dir, 'screenshot.png'), timeout: 8000 }).catch(() => undefined), 9000);
       const html = await withTimeout(page.content().catch(() => undefined), 5000);
-      if (html) fs.writeFileSync(path.join(dir, 'page.html'), html);
+      if (html) fs.writeFileSync(path.join(dir, 'page.html'), config.xchatPin ? redactInputs(html, config.xchatPin) : html);
     }
     log('debug dump at', dir);
     return dir;
   } catch {
     return undefined;
   }
+}
+
+/** Drop value attributes from <input> tags and any literal occurrence of the PIN inside them. */
+function redactInputs(html: string, pin: string): string {
+  return html.replace(/<input\b[^>]*>/gi, tag => tag.replace(/\svalue="[^"]*"/gi, ' value=""').split(pin).join('[redacted]'));
 }

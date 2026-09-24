@@ -1,7 +1,9 @@
+import { config } from './config.js';
 import type { Page } from 'playwright-core';
 import { markTab } from './browser.js';
 import { XctlError } from './errors.js';
 import { log } from './log.js';
+import { PIN_INPUT_SELECTOR, unlockWithPin } from './xchat-pin.js';
 
 export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -61,28 +63,49 @@ export async function viewerHandle(page: Page): Promise<string | null> {
  */
 export async function ensureXchatReady(page: Page, timeoutMs = 20_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  let last = { ready: false, locked: false, reason: '' };
+  let pinTried = false;
+  // XChat renders its empty shell first and only then redirects to /i/chat/pin/... when locked,
+  // so "ready" must hold for a while (or show real content) before we trust it.
+  let readySince: number | null = null;
   while (Date.now() < deadline) {
     checkLoginUrl(page);
-    last = await page
-      .evaluate(() => {
+    const st = await page
+      .evaluate(sel => {
         const q = (s: string) => document.querySelector(s);
         const ready = !!q('[data-testid="dm-inbox-panel"], [data-testid="dm-message-scroller"], [data-testid="dm-message-requests"]');
-        const input = document.querySelector(
-          'input[type="password"], input[autocomplete="one-time-code"], input[inputmode="numeric"], [data-testid*="passcode" i], [data-testid*="pin-input" i], [data-testid*="pincode" i]',
+        const content = !!q(
+          '[data-testid^="dm-conversation-item-"], [data-testid^="dm-message-request-item-"], [data-testid="dm-message-requests-empty"], [data-testid^="message-text-"], [data-testid="dm-conversation-header-item"]',
         );
-        if (input) return { ready, locked: true, reason: `unlock input ${input.getAttribute('data-testid') || input.tagName.toLowerCase()}` };
+        if (/^\/i\/chat\/pin(\/|$)/.test(location.pathname) || q('[data-testid="pin-code-input-container"]')) {
+          return { ready, content, locked: true, reason: 'passcode screen' };
+        }
+        const input = document.querySelector(sel);
+        if (input) return { ready, content, locked: true, reason: `unlock input ${input.getAttribute('data-testid') || input.tagName.toLowerCase()}` };
         if (!ready) {
           const text = ((q('main') as HTMLElement | null)?.innerText || '').slice(0, 3000);
           if (/passcode|enter (your )?pin\b|\bPIN\b|unlock (your )?(chat|messages)|recover (your )?(chat|messages|keys)/i.test(text)) {
-            return { ready, locked: true, reason: 'unlock prompt text' };
+            return { ready, content, locked: true, reason: 'unlock prompt text' };
           }
         }
-        return { ready, locked: false, reason: '' };
-      })
-      .catch(() => ({ ready: false, locked: false, reason: '' }));
-    if (last.locked) throw new XctlError('XCHAT_LOCKED', `XChat is locked (${last.reason}). Unlock it manually in the browser; xctl never enters the PIN.`);
-    if (last.ready) return;
+        return { ready, content, locked: false, reason: '' };
+      }, PIN_INPUT_SELECTOR)
+      .catch(() => ({ ready: false, content: false, locked: false, reason: '' }));
+    if (st.locked) {
+      // With XCTL_XCHAT_PIN set, try it exactly once per command; otherwise report the lock.
+      if (!config.xchatPin) {
+        throw new XctlError('XCHAT_LOCKED', `XChat is locked (${st.reason}). Unlock it in the browser, or set XCTL_XCHAT_PIN.`);
+      }
+      if (pinTried) throw new XctlError('XCHAT_PIN_REJECTED', 'XChat is still locked after entering the PIN from XCTL_XCHAT_PIN', { pin_attempted: true });
+      pinTried = true;
+      readySince = null;
+      await unlockWithPin(page);
+      continue;
+    }
+    if (st.ready) {
+      readySince ??= Date.now();
+      const held = Date.now() - readySince;
+      if ((st.content && held >= 600) || held >= 3000) return;
+    } else readySince = null;
     await sleep(300);
   }
   throw new XctlError('SELECTOR_NOT_FOUND', 'XChat did not render (no [data-testid=dm-inbox-panel] or [data-testid=dm-message-scroller])');

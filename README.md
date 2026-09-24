@@ -18,7 +18,7 @@ Start Chrome with remote debugging, log in to X, and unlock XChat once by hand:
   --remote-debugging-port=9222 --user-data-dir="$HOME/.xctl/chrome-profile"
 ```
 
-xctl never launches a browser, never enters or stores your XChat PIN, and never closes your tabs. It uses one tab of its own (marked with `window.name = "xctl"`) and brings that tab to the front while a command runs.
+xctl never launches a browser and never closes your tabs. It only enters your XChat passcode if you set `XCTL_XCHAT_PIN` (see below), and it never stores it. It uses one tab of its own (marked with `window.name = "xctl"`) and brings that tab to the front while a command runs.
 
 ## Environment
 
@@ -34,6 +34,8 @@ xctl never launches a browser, never enters or stores your XChat PIN, and never 
 | `XCTL_COMMAND_TIMEOUT_SEC` | `150` | hard limit per command (`TIMEOUT`) |
 | `XCTL_VERBOSE` | off | progress logs on stderr (same as `-v`) |
 | `XCTL_DOM_ONLY` | off | XChat: use only the rendered DOM, not app state (see below) |
+| `XCTL_XCHAT_PIN` | unset | XChat passcode to enter when XChat shows its passcode screen; unset = never enter it |
+| `XCTL_PIN_MAX_FAILURES` | `2` | stop entering the passcode after this many rejections in an hour |
 
 ## Commands
 
@@ -41,7 +43,8 @@ Add `--pretty` to any command for human-readable output. `xctl help` and `xctl <
 
 ```sh
 xctl health                                   # CDP up, logged in as whom, XChat unlocked
-xctl mentions -n 20                           # newest first
+xctl mentions -n 20                           # newest first; notifications + search, with replied_by_me
+xctl mentions --source notifications          # only the notifications Mentions tab (or: search)
 xctl mentions --since 1800000000000000001     # only newer than this id
 xctl thread https://x.com/someone/status/1800000000000000002   # ancestors (root first), tweet, direct replies
 xctl reply 1800000000000000003 "thanks!" --dry-run
@@ -69,6 +72,13 @@ xctl handled --unmark 1800000000000000003
 
 Message requests show up in `xctl dms` (or `--requests`) with `is_request: true` and `request_bucket` (`primary` or `other`), and `xctl dm` returns `request_pending: true` for them. Replying requires accepting first. `dm send` without `--accept` fails with `REQUEST_PENDING` and clicks nothing. `dm send --accept` and `dm accept` are writes like any other: in approval mode they queue a draft, so one approval covers both the accept and the reply. xctl never deletes requests.
 
+`mentions` merges the notifications Mentions tab, which can filter mentions out, with a Latest search for `@you`. Each mention lists the `sources` that found it. If one source fails, you still get the other's results plus a `warnings` entry. Each mention also has `replied_by_me`, read from your profile's Replies tab (one page load, no thread visits):
+- `true`, with `my_reply_id`: you replied.
+- `false`: none of your replies answer it.
+- `null`: it's older than the replies that were scanned.
+
+Replies sent through xctl count right away.
+
 Read commands include `handled: true|false` on each tweet and message. A confirmed reply marks its target tweet handled. A confirmed DM marks the conversation's latest incoming message handled.
 
 Reading has the same side effects as the web app: mentions and opened DMs are marked read.
@@ -90,7 +100,7 @@ Reading has the same side effects as the web app: mentions and opened DMs are ma
 | Code | Exit | Meaning / what to do |
 |---|---|---|
 | `LOGGED_OUT` | 10 | the Chrome profile isn't logged in to X |
-| `XCHAT_LOCKED` | 11 | XChat shows a PIN/unlock prompt; unlock it by hand |
+| `XCHAT_LOCKED` | 11 | XChat shows its passcode screen and `XCTL_XCHAT_PIN` isn't set; unlock by hand or set it |
 | `SELECTOR_NOT_FOUND` | 12 | an expected element never appeared (X UI changed?) |
 | `TIMEOUT` | 13 | a step or the whole command timed out |
 | `LOCKED_BUSY` | 14 | another xctl command is using the browser; retry later |
@@ -103,6 +113,7 @@ Reading has the same side effects as the web app: mentions and opened DMs are ma
 | `X_REJECTED` | 21 | X refused the write (e.g. duplicate); nothing was posted |
 | `REQUEST_PENDING` | 22 | the conversation is an unaccepted message request; use `dm send --accept` or `dm accept` |
 | `NETWORK` | 23 | a page failed to load (`net::ERR_*`); reads retry once, safe to retry later |
+| `XCHAT_PIN_REJECTED` | 24 | XChat rejected `XCTL_XCHAT_PIN` (see `error.attempts_remaining`), or xctl stopped trying after repeated rejections. **Don't retry** |
 | `INVALID_ARGS` | 2 | bad arguments |
 | `INTERNAL` | 1 | anything else |
 
@@ -116,13 +127,22 @@ Reading has the same side effects as the web app: mentions and opened DMs are ma
 - Every real send attempt is recorded in sqlite before the button is pressed, so rate limits hold across processes.
 - Drafts move `pending → sending → sent | failed | unconfirmed` (or `pending → rejected`). Only `pending` and `failed` drafts can be approved, and `failed` means nothing was sent.
 
+## XChat passcode
+
+When XChat is locked it redirects to a passcode screen (`/i/chat/pin/...`).
+- Without `XCTL_XCHAT_PIN`, DM commands fail with `XCHAT_LOCKED` and touch nothing.
+- With it set, xctl types the passcode once per command and checks that XChat actually opens.
+- A wrong passcode fails with `XCHAT_PIN_REJECTED` and is never retried. X warns that after 20 wrong attempts your messages are locked. So after `XCTL_PIN_MAX_FAILURES` rejections in an hour, xctl refuses to enter the passcode at all until one succeeds.
+- The passcode is read only from the environment. It's never written to disk, logs, or error messages; attempts are recorded as time + outcome only. Debug dumps blank the passcode fields and strip input values from the saved HTML.
+- Anything running in the same environment (including the agent) can read `XCTL_XCHAT_PIN`.
+
 ## Debug dumps
 
 On any failure xctl saves `screenshot.png`, `page.html`, and `error.json` to `~/.xctl/debug/<timestamp>-<command>/` and includes the path in `error.message` and `error.debug_dir`.
 
 ## How it reads X
 
-- **Mentions and threads** come from X's own GraphQL responses (`NotificationsTimeline`, `TweetDetail`), captured with `page.on('response')`, not from scraping.
+- **Mentions and threads** come from X's own GraphQL responses (`NotificationsTimeline`, `SearchTimeline`, `UserRepliesTimeline`, `TweetDetail`), captured with `page.on('response')`, not from scraping.
 - **DMs** are end-to-end encrypted on the wire, so they're read from the rendered XChat app via `data-testid` elements.
   - The sender side comes from layout (right = you).
   - Exact timestamps, sender ids, and ordering come from the app's in-memory state, found by value shape. X's field names are minified and change between deploys, so they can't be used.
