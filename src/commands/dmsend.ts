@@ -8,6 +8,7 @@ import { ensureLoggedIn, ensureXchatReady, goto, sleep, waitForSelector } from '
 import type { Session } from '../runner.js';
 import { readDmThread, type DmSnapshot } from '../xchat-page.js';
 import { waitStable } from './dm.js';
+import { passcodeScreenVisible, unlockWithPin } from '../xchat-pin.js';
 
 const TEXTAREA = '[data-testid="dm-composer-textarea"]';
 const SEND = '[data-testid="dm-composer-send-button"]';
@@ -27,6 +28,20 @@ async function openConversation(s: Session, conversation: string): Promise<{ con
   return { convId, snap: await waitStable(s) };
 }
 
+/**
+ * After a button was pressed we must not start over. If the passcode screen shows up, unlock and reopen the
+ * conversation so the caller can keep checking the outcome. Returns true if it had to do that.
+ */
+async function recoverFromPasscode(s: Session, convId: string): Promise<boolean> {
+  if (!(await passcodeScreenVisible(s.page))) return false;
+  log('passcode screen appeared after pressing; unlocking and reopening the conversation');
+  await unlockWithPin(s.page);
+  const { path } = parseConversationId(convId);
+  await goto(s.page, `https://x.com/i/chat/${path}`);
+  await ensureXchatReady(s.page);
+  return true;
+}
+
 /** Press Accept on a pending message request and wait until the normal composer replaces the prompt. */
 async function acceptRequest(s: Session, convId: string, opts: WriteOpts): Promise<void> {
   const { page } = s;
@@ -37,13 +52,17 @@ async function acceptRequest(s: Session, convId: string, opts: WriteOpts): Promi
   const writeId = recordWrite('accept', convId, opts.draftId ?? null);
   log('pressing Accept on message request');
   await btn.click({ timeout: 5_000 });
-  try {
-    await page.waitForFunction(
-      () => !document.querySelector('[data-testid="dm-message-request-prompt"]') && !!document.querySelector('[data-testid="dm-composer-textarea"]'),
-      undefined,
-      { timeout: 15_000 },
-    );
-  } catch {
+  const deadline = Date.now() + 20_000;
+  let accepted = false;
+  while (Date.now() < deadline) {
+    await recoverFromPasscode(s, convId);
+    accepted = await page
+      .evaluate(() => !document.querySelector('[data-testid="dm-message-request-prompt"]') && !!document.querySelector('[data-testid="dm-composer-textarea"]'))
+      .catch(() => false);
+    if (accepted) break;
+    await sleep(400);
+  }
+  if (!accepted) {
     finishWrite(writeId, 'unconfirmed');
     throw new XctlError('UNCONFIRMED', `pressed Accept but the message request prompt did not go away; check with \`xctl dm ${convId}\``, {
       accept_pressed: true,
@@ -51,6 +70,7 @@ async function acceptRequest(s: Session, convId: string, opts: WriteOpts): Promi
   }
   finishWrite(writeId, 'sent');
 }
+
 
 export async function performAccept(s: Session, conversation: string, _text: string, opts: WriteOpts, state: WriteState) {
   const { convId, snap } = await openConversation(s, conversation);
@@ -136,6 +156,8 @@ export async function performDmSend(s: Session, conversation: string, text: stri
     let found: { id: string; status: string | null; ts: number | null } | null = null;
     while (Date.now() < deadline) {
       await sleep(500);
+      // Never resend: if XChat asks for the passcode now, unlock, reopen, and keep looking for the message.
+      await recoverFromPasscode(s, convId);
       const snap = await page.evaluate(readDmThread, config.domOnly);
       const row = snap?.rows.find(r => r.kind === 'message' && r.id && !prevIds.has(r.id) && r.from_me !== false && normText(r.text) === want);
       if (row) {

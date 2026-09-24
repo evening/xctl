@@ -32,7 +32,11 @@ export async function sendOrQueue(kind: DraftKind, target: string, text: string,
       return emitError(toXctlError(e), pretty);
     }
   }
-  return runBrowser(COMMAND[kind], { pretty, kind: 'write', format: formatWrite }, s => PERFORM[kind](s, target, text, { dryRun, ...options }, newWriteState()));
+  let st = newWriteState();
+  return runBrowser(COMMAND[kind], { pretty, kind: 'write', format: formatWrite, canRestart: () => !st.pressed }, s => {
+    st = newWriteState();
+    return PERFORM[kind](s, target, text, { dryRun, ...options }, st);
+  });
 }
 
 export async function approveDraft(id: number, dryRun: boolean, pretty: boolean): Promise<never> {
@@ -49,8 +53,9 @@ export async function approveDraft(id: number, dryRun: boolean, pretty: boolean)
       return emitError(toXctlError(e), pretty);
     }
   }
-  return runBrowser('drafts-approve', { pretty, kind: 'write', format: formatWrite }, async s => {
-    const st = newWriteState();
+  let st = newWriteState();
+  return runBrowser('drafts-approve', { pretty, kind: 'write', format: formatWrite, canRestart: () => !st.pressed }, async s => {
+    st = newWriteState();
     if (dryRun) return { draft_id: id, ...(await PERFORM[d.kind](s, d.target, d.text, { dryRun: true, ...options }, st)) };
     if (!transitionDraft(id, ['pending', 'failed'], 'sending')) throw new XctlError('INVALID_ARGS', `draft #${id} changed state; re-check with \`xctl drafts list --all\``);
     try {

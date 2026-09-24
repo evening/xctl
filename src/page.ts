@@ -3,7 +3,7 @@ import type { Page } from 'playwright-core';
 import { markTab } from './browser.js';
 import { XctlError } from './errors.js';
 import { log } from './log.js';
-import { PIN_INPUT_SELECTOR, unlockWithPin } from './xchat-pin.js';
+import { PIN_INPUT_SELECTOR, passcodeScreenVisible, relockedError, unlockWithPin } from './xchat-pin.js';
 
 export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -33,6 +33,13 @@ export async function ensureLoggedIn(page: Page, timeoutMs = 20_000): Promise<vo
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     checkLoginUrl(page);
+    // A redirect to XChat's passcode screen can happen on any page. Unlock, then restart the command
+    // so it navigates to where it meant to be.
+    if (await passcodeScreenVisible(page)) {
+      if (!config.xchatPin) throw relockedError();
+      await unlockWithPin(page);
+      throw relockedError();
+    }
     const s = await page
       .evaluate(() => ({
         app: !!document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"], [data-testid="AppTabBar_Profile_Link"]'),

@@ -5,6 +5,7 @@ import { log } from '../log.js';
 import { ensureLoggedIn, ensureXchatReady, goto, sleep, viewerHandle, waitForSelector } from '../page.js';
 import type { Session } from '../runner.js';
 import { annotateHandled } from './handled.js';
+import { guardPasscode } from '../xchat-pin.js';
 import { combine, dayLabelClock, parseDayLabel } from '../timeparse.js';
 import { dmScrollTop, readDmThread, type DmRow, type DmSnapshot } from '../xchat-page.js';
 
@@ -73,6 +74,7 @@ export async function waitStable(s: Session, timeoutMs = 15_000): Promise<DmSnap
   let stable = 0;
   let snap: DmSnapshot | null = null;
   while (Date.now() < deadline) {
+    await guardPasscode(s.page);
     snap = await s.page.evaluate(readDmThread, config.domOnly);
     const msgs = snap?.rows.filter(r => r.kind !== 'info') ?? [];
     const key = msgs.map(r => r.id ?? r.kind).join('|');
@@ -132,6 +134,7 @@ export async function dm(s: Session, arg: string, count: number) {
   let idle = 0;
   for (let i = 0; seq.messageCount < count && !seq.reachedStart && idle < 4 && i < 80; i++) {
     const before = seq.messageCount;
+    await guardPasscode(page);
     const topBefore = await page.evaluate(dmScrollTop);
     await page.focus('[data-testid="dm-message-scroller"]', { timeout: 5_000 });
     await page.keyboard.press('PageUp');

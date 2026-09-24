@@ -18,6 +18,8 @@ export interface RunOpts {
   /** Reads may be retried once; writes never. */
   kind: 'read' | 'write';
   format?: (data: any) => string;
+  /** Writes: may the command be restarted from scratch? (true only while nothing was sent) */
+  canRestart?: () => boolean;
 }
 
 let cleanupHooks: (() => void)[] = [];
@@ -72,6 +74,7 @@ export async function runBrowser<T>(command: string, opts: RunOpts, fn: (s: Sess
     const attempts = opts.kind === 'read' ? 2 : 1;
     let lastErr: XctlError | undefined;
     let data: T | undefined;
+    let restarts = 0;
     for (let i = 1; i <= attempts; i++) {
       try {
         data = await fn(session);
@@ -79,6 +82,14 @@ export async function runBrowser<T>(command: string, opts: RunOpts, fn: (s: Sess
         break;
       } catch (e) {
         lastErr = toXctlError(e);
+        // XChat asked for the passcode mid-command: start over (the fresh page load unlocks with XCTL_XCHAT_PIN).
+        // Never after a write pressed send.
+        if (lastErr.details?.relocked && config.xchatPin && restarts < 2 && (opts.kind === 'read' || opts.canRestart?.())) {
+          restarts++;
+          log(`passcode screen appeared mid-command; restarting (${restarts}/2)`);
+          i--;
+          continue;
+        }
         if (i < attempts && RETRYABLE.has(lastErr.code)) {
           log(`attempt ${i} failed (${lastErr.code}: ${lastErr.message}); retrying once`);
           continue;

@@ -12,6 +12,27 @@ export const PIN_INPUT_SELECTOR =
 
 type UnlockState = 'unlocked' | 'locked' | 'error';
 
+/** Is XChat's passcode screen (or a passcode prompt) showing right now? */
+export async function passcodeScreenVisible(page: Page): Promise<boolean> {
+  return page
+    .evaluate(() => /^\/i\/chat\/pin(\/|$)/.test(location.pathname) || !!document.querySelector('[data-testid="pin-code-input-container"]'))
+    .catch(() => false);
+}
+
+/** Thrown when the passcode screen appears in the middle of a command; the runner unlocks and restarts. */
+export function relockedError(): XctlError {
+  return new XctlError(
+    'XCHAT_LOCKED',
+    config.xchatPin ? 'XChat asked for the passcode again in the middle of the command' : 'XChat is locked (passcode screen). Unlock it in the browser, or set XCTL_XCHAT_PIN.',
+    { relocked: true },
+  );
+}
+
+/** Call inside wait loops: throws relockedError() if the passcode screen is showing. */
+export async function guardPasscode(page: Page): Promise<void> {
+  if (await passcodeScreenVisible(page)) throw relockedError();
+}
+
 async function state(page: Page): Promise<UnlockState> {
   return page
     .evaluate(sel => {

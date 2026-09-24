@@ -6,6 +6,7 @@ import type { Session } from '../runner.js';
 import { parseRelative } from '../timeparse.js';
 import { readInbox, type InboxSnapshot } from '../xchat-page.js';
 import { handledSet } from '../db.js';
+import { guardPasscode } from '../xchat-pin.js';
 
 export interface DmsOpts {
   count: number;
@@ -96,6 +97,7 @@ async function waitInbox(s: Session, requestsView: boolean): Promise<InboxSnapsh
   let stableFor = 0;
   let lastKey = '';
   while (Date.now() < deadline) {
+    await guardPasscode(s.page);
     snap = await s.page.evaluate(readInbox, config.domOnly);
     if (requestsView && !snap.requestsView) {
       await sleep(250);

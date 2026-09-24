@@ -132,6 +132,7 @@ Reading has the same side effects as the web app: mentions and opened DMs are ma
 When XChat is locked it redirects to a passcode screen (`/i/chat/pin/...`).
 - Without `XCTL_XCHAT_PIN`, DM commands fail with `XCHAT_LOCKED` and touch nothing.
 - With it set, xctl types the passcode once per command and checks that XChat actually opens.
+- If the passcode screen appears partway through a command, xctl unlocks and restarts the command, at most twice and never after pressing send. After send was pressed, it unlocks, reopens the conversation, and keeps checking for the message instead of resending.
 - A wrong passcode fails with `XCHAT_PIN_REJECTED` and is never retried. X warns that after 20 wrong attempts your messages are locked. So after `XCTL_PIN_MAX_FAILURES` rejections in an hour, xctl refuses to enter the passcode at all until one succeeds.
 - The passcode is read only from the environment. It's never written to disk, logs, or error messages; attempts are recorded as time + outcome only. Debug dumps blank the passcode fields and strip input values from the saved HTML.
 - Anything running in the same environment (including the agent) can read `XCTL_XCHAT_PIN`.
