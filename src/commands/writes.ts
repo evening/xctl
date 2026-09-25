@@ -5,14 +5,15 @@ import { XctlError, toXctlError } from '../errors.js';
 import { emitError } from '../output.js';
 import { runBrowser, runLocal, type Session } from '../runner.js';
 import { performAccept, performDmSend } from './dmsend.js';
+import { performPost } from './post.js';
 import { formatWrite, performReply } from './reply.js';
 
 type Perform = (s: Session, target: string, text: string, opts: { dryRun: boolean; draftId?: number; accept?: boolean }, st: WriteState) => Promise<any>;
 
-const PERFORM: Record<DraftKind, Perform> = { reply: performReply, dm: performDmSend, accept: performAccept };
-const COMMAND: Record<DraftKind, string> = { reply: 'reply', dm: 'dm-send', accept: 'dm-accept' };
+const PERFORM: Record<DraftKind, Perform> = { post: performPost, reply: performReply, dm: performDmSend, accept: performAccept };
+const COMMAND: Record<DraftKind, string> = { post: 'post', reply: 'reply', dm: 'dm-send', accept: 'dm-accept' };
 
-/** reply / dm send: queue a draft in approval mode, otherwise send (or dry-run) now. */
+/** post / reply / dm send: queue a draft in approval mode, otherwise send (or dry-run) now. */
 export async function sendOrQueue(kind: DraftKind, target: string, text: string, dryRun: boolean, pretty: boolean, options: DraftOptions = {}): Promise<never> {
   if (config.requireApproval && !dryRun) {
     return runLocal(() => {
@@ -90,7 +91,7 @@ export function listDraftsCmd(status: DraftStatus | 'all', limit: number, pretty
     format: (d: any) =>
       d.drafts.length
         ? d.drafts
-            .map((r: any) => `#${r.id} [${r.status}] ${r.kind}${r.options?.accept ? ' (+accept request)' : ''} -> ${r.target}  (${r.created_at})${r.text ? `\n    ${r.text.replace(/\n/g, '\n    ')}` : ''}`)
+            .map((r: any) => `#${r.id} [${r.status}] ${r.kind}${r.options?.accept ? ' (+accept request)' : ''}${r.target ? ` -> ${r.target}` : ''}  (${r.created_at})${r.text ? `\n    ${r.text.replace(/\n/g, '\n    ')}` : ''}`)
             .join('\n')
         : '(no drafts)',
   });

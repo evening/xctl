@@ -26,7 +26,7 @@ xctl never launches a browser and never closes your tabs. It only enters your XC
 |---|---|---|
 | `CDP_URL` | `http://127.0.0.1:9222` | Chrome DevTools endpoint |
 | `XCTL_HOME` | `~/.xctl` | state: sqlite db, lock, debug dumps, dry-run screenshots |
-| `XCTL_REQUIRE_APPROVAL` | `true` | `reply` / `dm send` / `dm accept` only queue drafts |
+| `XCTL_REQUIRE_APPROVAL` | `true` | `post` / `reply` / `dm send` / `dm accept` only queue drafts |
 | `XCTL_WRITE_MIN_INTERVAL_SEC` | `20` | minimum gap between real sends |
 | `XCTL_WRITES_PER_HOUR` | `30` | cap on real sends per rolling hour (`0` = no cap) |
 | `XCTL_LOCK_WAIT_SEC` | `30` | how long to wait for the browser lock before `LOCKED_BUSY` |
@@ -50,6 +50,8 @@ xctl thread https://x.com/someone/status/1800000000000000002   # ancestors (root
 xctl reply 1800000000000000003 "thanks!" --dry-run
 xctl reply 1800000000000000003 "thanks!"      # queued as a draft in approval mode
 printf "line one\nline two" | xctl reply 1800000000000000003 -   # "-" reads text from stdin
+xctl post "hello" --dry-run                   # a new tweet (not a reply), typed on x.com/home
+xctl post "hello"                             # queued as a draft in approval mode
 
 xctl dms                                      # inbox + message requests
 xctl dms --requests                           # only requests (incl. the "Other" bucket)
@@ -122,6 +124,7 @@ Reading has the same side effects as the web app: mentions and opened DMs are ma
 - `--dry-run` types the text, checks that the composer shows exactly that text, saves a screenshot to `~/.xctl/dryrun/`, clears the composer, and never presses send.
 - Real sends are never retried. After pressing send, xctl verifies the result:
   - Replies: the new tweet is fetched and must be yours and must reply to the target. The output includes its id and url.
+  - Posts: the new tweet is fetched and must be yours and not a reply. The output includes its id and url.
   - DMs: the new message must appear in the thread with status `sent`.
   - Anything else is `UNCONFIRMED`.
 - Every real send attempt is recorded in sqlite before the button is pressed, so rate limits hold across processes.

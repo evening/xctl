@@ -55,7 +55,7 @@ Output contract:
                XCHAT_PIN_REJECTED CDP_UNAVAILABLE INVALID_ARGS INTERNAL
   UNCONFIRMED = send was pressed but not verified: check before resending (never blindly retry writes).
   LOCKED_BUSY / TIMEOUT / NETWORK / RATE_LIMITED_LOCAL (see error.retry_after_sec) are safe to retry later.
-Writes: \`reply\` and \`dm send\` need approval by default: they return error QUEUED with a top-level
+Writes: \`post\`, \`reply\` and \`dm send\` need approval by default: they return error QUEUED with a top-level
   draft_id, and a human runs \`xctl drafts approve <id>\`. --dry-run types the text, saves a screenshot,
   and never sends. Replying marks the target handled. Message requests (dms --requests, dm shows
   request_pending) must be accepted before replying: \`dm send --accept\` or \`dm accept\`.
@@ -94,6 +94,20 @@ program
   .argument('<tweet>', 'tweet id or URL', tweetIdArg)
   .addHelpText('after', '\ndata: {tweet, ancestors:[root..parent], replies:[...], complete}\n tweet fields as in `mentions`; unavailable tweets have unavailable:true')
   .action(id => runBrowser('thread', { pretty, kind: 'read', format: formatThread }, s => thread(s, id)));
+
+program
+  .command('post')
+  .description('post a new tweet, not a reply (queued as a draft when approval is required)')
+  .argument('<text>', 'tweet text ("-" reads stdin)')
+  .option('--dry-run', 'type the text and save a screenshot, never send')
+  .addHelpText(
+    'after',
+    '\ndata (sent): {sent, confirmed, id, url, text, created_at}\ndata (dry run): {dry_run, text, screenshot}\napproval mode: {"ok":false,"error":{"code":"QUEUED",...},"draft_id":N}',
+  )
+  .action(async (text, o) => {
+    const t = validateText(await resolveText(text), 25_000);
+    return sendOrQueue('post', '', t, !!o.dryRun, pretty);
+  });
 
 program
   .command('reply')
@@ -161,20 +175,20 @@ dmCmd
     return sendOrQueue('accept', id, '', !!o.dryRun, pretty);
   });
 
-const drafts = program.command('drafts').description('list, approve, or reject queued replies/DMs');
+const drafts = program.command('drafts').description('list, approve, or reject queued posts/replies/DMs');
 drafts
   .command('list')
   .description('list drafts (default: pending)')
   .addOption(new Option('--status <status>', 'filter by status').choices(['pending', 'sending', 'sent', 'failed', 'unconfirmed', 'rejected', 'all']).default('pending'))
   .option('-n, --count <n>', 'max drafts (1-500)', int('--count', 500), 50)
-  .addHelpText('after', '\ndata: {count, drafts:[{id, kind:"reply"|"dm", target, text, status, created_at, updated_at, result, error}]}')
+  .addHelpText('after', '\ndata: {count, drafts:[{id, kind:"post"|"reply"|"dm"|"accept", target ("" for post), text, status, created_at, updated_at, result, error}]}')
   .action(o => listDraftsCmd(o.status, o.count, pretty));
 drafts
   .command('approve')
   .description('send a pending (or failed) draft through the normal send path')
   .argument('<id>', 'draft id', int('<id>', Number.MAX_SAFE_INTEGER))
   .option('--dry-run', 'preview: type the text and screenshot, never send')
-  .addHelpText('after', '\ndata: same as `reply` / `dm send`, plus draft_id')
+  .addHelpText('after', '\ndata: same as `post` / `reply` / `dm send`, plus draft_id')
   .action((id, o) => approveDraft(id, !!o.dryRun, pretty));
 drafts
   .command('reject')

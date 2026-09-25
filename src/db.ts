@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { config, ensureHome } from './config.js';
 
-export type DraftKind = 'reply' | 'dm' | 'accept';
+export type DraftKind = 'post' | 'reply' | 'dm' | 'accept';
 
 export interface DraftOptions {
   /** dm: accept a pending message request before sending. */
@@ -211,7 +211,7 @@ export function writeAllowed(nowMs = Date.now()): { ok: true } | { ok: false; re
   const d = getDb();
   // Every attempt that reached the send button counts, whatever its outcome.
   // Only messages count (accepting a request is audited but not rate limited).
-  const counted = "kind IN ('reply', 'dm') AND status IN ('attempted', 'sent', 'unconfirmed', 'failed_after_send')";
+  const counted = "kind IN ('post', 'reply', 'dm') AND status IN ('attempted', 'sent', 'unconfirmed', 'failed_after_send')";
   const last = d.prepare(`SELECT at_ms FROM writes WHERE ${counted} ORDER BY at_ms DESC LIMIT 1`).get() as { at_ms: number } | undefined;
   const minMs = config.writeMinIntervalSec * 1000;
   if (last && nowMs - last.at_ms < minMs) {
