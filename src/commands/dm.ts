@@ -9,6 +9,9 @@ import { guardPasscode } from '../xchat-pin.js';
 import { combine, dayLabelClock, parseDayLabel } from '../timeparse.js';
 import { dmScrollTop, readDmThread, type DmRow, type DmSnapshot } from '../xchat-page.js';
 
+/** XChat's read-only reason when the other person has blocked us. */
+export const BLOCKED_REASON = 'IsDmBlockingMe';
+
 export interface MessageOut {
   id: string;
   sender: string | null;
@@ -129,6 +132,7 @@ export async function dm(s: Session, arg: string, count: number) {
   seq.merge(snap.rows);
   const header = { handle: snap.headerHandle, name: snap.headerName };
   const requestPending = snap.requestPending;
+  const { readOnly, readOnlyReason } = snap;
   // Programmatic scrollTop changes are undone by the app (it re-pins to the bottom), so scroll like a user:
   // keyboard PageUp on the focused message log.
   let idle = 0;
@@ -194,6 +198,9 @@ export async function dm(s: Session, arg: string, count: number) {
     participants: oneToOne ? [header.handle].filter(Boolean) : [],
     title: header.name,
     request_pending: requestPending,
+    read_only: readOnly,
+    read_only_reason: readOnlyReason,
+    blocked_by_them: readOnlyReason === BLOCKED_REASON,
     count: messages.length,
     has_more: !reachedStart || items.length > count,
     messages,
@@ -201,7 +208,9 @@ export async function dm(s: Session, arg: string, count: number) {
 }
 
 export function formatDm(d: any): string {
-  const head = `${d.conversation_id}  ${d.title ?? ''}${d.participants.length ? ' (@' + d.participants.join(', @') + ')' : ''}${d.request_pending ? '  [message request: not accepted]' : ''}`;
+  const head = `${d.conversation_id}  ${d.title ?? ''}${d.participants.length ? ' (@' + d.participants.join(', @') + ')' : ''}${d.request_pending ? '  [message request: not accepted]' : ''}${
+    d.blocked_by_them ? '  [read-only: they blocked you]' : d.read_only ? `  [read-only${d.read_only_reason ? ': ' + d.read_only_reason : ''}]` : ''
+  }`;
   const lines = d.messages.map((m: MessageOut) => {
     const who = m.from_me ? 'me' : m.sender ? '@' + m.sender : m.sender_id ?? '?';
     const ts = m.timestamp ? new Date(m.timestamp).toLocaleString() : '';

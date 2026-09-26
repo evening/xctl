@@ -136,6 +136,10 @@ export interface DmSnapshot {
   headerName: string | null;
   /** Unaccepted message request: the composer is replaced by Accept/Delete. */
   requestPending: boolean;
+  /** The composer is replaced by "This conversation is currently in read-only mode." */
+  readOnly: boolean;
+  /** The app's reason for read-only mode, e.g. "IsDmBlockingMe" (they blocked us). Null if unknown. */
+  readOnlyReason: string | null;
 }
 
 export function readDmThread(domOnly: boolean): DmSnapshot | null {
@@ -274,6 +278,17 @@ export function readDmThread(domOnly: boolean): DmSnapshot | null {
     }
   }
   rows.sort((a, b) => a.idx - b.idx);
+  // The notice's parent component gets the reason as an unminified prop: <X reasonName="IsDmBlockingMe" reasonText=...>.
+  const readOnlyEl = document.querySelector('[data-testid="dm-read-only-notice"]');
+  let readOnlyReason: string | null = null;
+  if (readOnlyEl && !domOnly) {
+    const fk = Object.keys(readOnlyEl).find(k => k.startsWith('__reactFiber$'));
+    let f = fk ? (readOnlyEl as any)[fk] : null;
+    for (let i = 0; i < 4 && f && !readOnlyReason; i++, f = f.return) {
+      const r = f.memoizedProps?.reasonName;
+      if (typeof r === 'string' && r) readOnlyReason = r;
+    }
+  }
   const headerLink = document.querySelector('[data-testid="dm-conversation-header"] a[href]')?.getAttribute('href') ?? '';
   const hm = headerLink.match(/^(?:https:\/\/x\.com)?\/([A-Za-z0-9_]{1,15})\/?$/);
   return {
@@ -285,6 +300,8 @@ export function readDmThread(domOnly: boolean): DmSnapshot | null {
     headerHandle: hm ? hm[1] : null,
     headerName: (document.querySelector('[data-testid="dm-conversation-username"]') as HTMLElement | null)?.innerText.trim() ?? null,
     requestPending: !!document.querySelector('[data-testid="dm-message-request-prompt"], [data-testid="dm-message-request-accept-button"]'),
+    readOnly: !!readOnlyEl,
+    readOnlyReason,
   };
 }
 

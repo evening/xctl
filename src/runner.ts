@@ -102,7 +102,7 @@ export async function runBrowser<T>(command: string, opts: RunOpts, fn: (s: Sess
   } catch (e) {
     const err = toXctlError(e);
     // Expected outcomes (not UI failures) get no debug dump.
-    if (!['LOCKED_BUSY', 'QUEUED', 'RATE_LIMITED_LOCAL', 'REQUEST_PENDING', 'INVALID_ARGS'].includes(err.code)) {
+    if (!['LOCKED_BUSY', 'QUEUED', 'RATE_LIMITED_LOCAL', 'REQUEST_PENDING', 'READ_ONLY', 'INVALID_ARGS'].includes(err.code)) {
       const dir = await dumpDebug(page, command, err);
       if (dir) {
         err.message += `; debug: ${dir}`;

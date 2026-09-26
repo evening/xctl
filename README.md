@@ -74,6 +74,8 @@ xctl handled --unmark 1800000000000000003
 
 Message requests show up in `xctl dms` (or `--requests`) with `is_request: true` and `request_bucket` (`primary` or `other`), and `xctl dm` returns `request_pending: true` for them. Replying requires accepting first. `dm send` without `--accept` fails with `REQUEST_PENDING` and clicks nothing. `dm send --accept` and `dm accept` are writes like any other: in approval mode they queue a draft, so one approval covers both the accept and the reply. xctl never deletes requests.
 
+When someone blocks you, XChat keeps the conversation but swaps the composer for "This conversation is currently in read-only mode." `xctl dm` returns `read_only: true`, `read_only_reason` (XChat's own reason name, `IsDmBlockingMe` for a block), and `blocked_by_them: true`. `dm send` to a read-only conversation fails with `READ_ONLY` and types nothing.
+
 `mentions` merges the notifications Mentions tab, which can filter mentions out, with a Latest search for `@you`. Each mention lists the `sources` that found it. If one source fails, you still get the other's results plus a `warnings` entry. Each mention also has `replied_by_me`, read from your profile's Replies tab (one page load, no thread visits):
 - `true`, with `my_reply_id`: you replied.
 - `false`: none of your replies answer it.
@@ -116,6 +118,7 @@ Reading has the same side effects as the web app: mentions and opened DMs are ma
 | `REQUEST_PENDING` | 22 | the conversation is an unaccepted message request; use `dm send --accept` or `dm accept` |
 | `NETWORK` | 23 | a page failed to load (`net::ERR_*`); reads retry once, safe to retry later |
 | `XCHAT_PIN_REJECTED` | 24 | XChat rejected `XCTL_XCHAT_PIN` (see `error.attempts_remaining`), or xctl stopped trying after repeated rejections. **Don't retry** |
+| `READ_ONLY` | 25 | the conversation is read-only (`error.blocked_by_them` when they blocked you); it can't be replied to. **Don't retry** |
 | `INVALID_ARGS` | 2 | bad arguments |
 | `INTERNAL` | 1 | anything else |
 

@@ -7,7 +7,7 @@ import { log } from '../log.js';
 import { ensureLoggedIn, ensureXchatReady, goto, sleep, waitForSelector } from '../page.js';
 import type { Session } from '../runner.js';
 import { readDmThread, type DmSnapshot } from '../xchat-page.js';
-import { waitStable } from './dm.js';
+import { BLOCKED_REASON, waitStable } from './dm.js';
 import { passcodeScreenVisible, unlockWithPin } from '../xchat-pin.js';
 
 const TEXTAREA = '[data-testid="dm-composer-textarea"]';
@@ -92,6 +92,15 @@ export async function performDmSend(s: Session, conversation: string, text: stri
   const acceptedRequest = opened.snap.requestPending;
   let before = opened.snap;
   const participants = before.headerHandle ? [before.headerHandle] : [];
+
+  if (before.readOnly) {
+    const blocked = before.readOnlyReason === BLOCKED_REASON;
+    throw new XctlError(
+      'READ_ONLY',
+      blocked ? `${convId} is read-only: they blocked you, so it can't be replied to` : `${convId} is read-only (${before.readOnlyReason ?? 'reason unknown'}); it can't be replied to`,
+      { read_only_reason: before.readOnlyReason, blocked_by_them: blocked },
+    );
+  }
 
   if (before.requestPending) {
     if (!opts.accept) {
