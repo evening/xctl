@@ -65,7 +65,7 @@ export async function fillComposer(page: Page, text: string, what: string, mark:
   await waitForSelector(page, COMPOSER, `${what} composer`, 15_000);
   const box = composerBox(page);
   if (normText(await composerText(box))) await clearComposer(page, box);
-  await box.click({ timeout: 5_000 });
+  await box.focus({ timeout: 5_000 });
   mark.typed = true;
   // insertText handles newlines/emoji without key events that could accept an @mention suggestion.
   await page.keyboard.insertText(text);
