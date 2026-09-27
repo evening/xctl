@@ -9,6 +9,7 @@ import { health, formatHealth } from './commands/health.js';
 import { mentions, formatMentions } from './commands/mentions.js';
 import { thread, formatThread } from './commands/thread.js';
 import { dms, formatDms } from './commands/dms.js';
+import { recent } from './commands/recent.js';
 import { dm, formatDm } from './commands/dm.js';
 import { approveDraft, listDraftsCmd, rejectDraft, sendOrQueue } from './commands/writes.js';
 import { handledCmd } from './commands/handled.js';
@@ -137,6 +138,16 @@ program
     '\ndata: {count, source, conversations:[{conversation_id, participants:[handle], participant_ids, title,\n  last_message:{id, preview, from_me, sender_id}, timestamp, timestamp_approx, time_label, unread, unread_count, is_request}]}',
   )
   .action(o => runBrowser('dms', { pretty, kind: 'read', format: formatDms }, s => dms(s, { count: o.count, requests: o.requests })));
+
+program
+  .command('recent')
+  .description('read-only recent DM and public-mention snapshot with review candidates (not a task queue)')
+  .option('--days <n>', 'lookback window in days (1-30)', int('--days', 30), 3)
+  .option('-n, --count <n>', 'max inbox rows and mentions to scan (1-200)', int('--count', 200), 50)
+  .option('--dm-threads <n>', 'recent DM thread tails to open (1-10)', int('--dm-threads', 10), 3)
+  .option('--messages <n>', 'messages per opened DM thread (1-50)', int('--messages', 50), 12)
+  .addHelpText('after', '\ndata: {snapshot_at,cutoff_at,coverage,dms,public_threads,review_candidates}.\nCandidates are observations, not instructions to reply. Check exact threads and cron resolved_items before acting;\nmissing timestamps and list limits are flagged, and a preview/thread mismatch requires a reread.')
+  .action(o => runBrowser('recent', { pretty, kind: 'read' }, s => recent(s, { days: o.days, count: o.count, dmThreads: o.dmThreads, messages: o.messages })));
 
 const dmCmd = program
   .command('dm')
