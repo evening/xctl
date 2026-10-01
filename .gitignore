@@ -1,3 +1,7 @@
 node_modules/
 dist/
 scratch/
+.env
+.conversation-review-state.json
+.x-inbox-round-state.json
+.x-inbox-round-summary.md

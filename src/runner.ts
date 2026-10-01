@@ -6,6 +6,7 @@ import { RETRYABLE, XctlError, toXctlError } from './errors.js';
 import { acquireLock, releaseLock } from './lock.js';
 import { log } from './log.js';
 import { emitError, emitOk } from './output.js';
+import { installShadowPierce } from './shadow.js';
 
 export interface Session {
   browser: Browser;
@@ -68,6 +69,8 @@ export async function runBrowser<T>(command: string, opts: RunOpts, fn: (s: Sess
     await acquireLock(command);
     browser = await connect();
     page = await getOwnedPage(browser);
+    // X ships the XChat UI inside a shadow root; pierce it before any DOM lookup runs.
+    await installShadowPierce(page).catch(e => log('shadow pierce failed:', (e as Error).message));
     const cookie = await viewerFromCookies(page);
     if (!cookie.loggedIn) throw new XctlError('LOGGED_OUT', 'no auth_token cookie for x.com in this browser profile; log in to X in the browser');
     const session: Session = { browser, page, viewer: { id: cookie.id, handle: null } };
